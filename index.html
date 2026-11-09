@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTR First & Last Train</title>
+  <style>
+    :root {
+      --bg: #f7f8fa; --card: #fff; --border: #e5e7eb; --text: #111827;
+      --muted: #6b7280; --accent: #0f766e; --accent-light: #ccfbf1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.5; padding: 16px; min-height: 100vh;
+    }
+    body.embed { padding: 8px; background: transparent; }
+    .container { max-width: 480px; margin: 0 auto; }
+    h1 { font-size: 1.25rem; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { font-size: 0.8rem; color: var(--muted); margin-bottom: 16px; }
+    .search-row { display: flex; gap: 10px; margin-bottom: 12px; }
+    .search-box { position: relative; flex: 1; }
+    .search-box label {
+      display: block; font-size: 0.7rem; text-transform: uppercase;
+      letter-spacing: 0.04em; color: var(--muted); margin-bottom: 4px;
+    }
+    input[type="text"] {
+      width: 100%; padding: 10px 12px; font-size: 0.95rem;
+      border: 1px solid var(--border); border-radius: 10px; background: var(--card); outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(15,118,110,.15); }
+    .dropdown {
+      position: absolute; top: 100%; left: 0; right: 0; background: var(--card);
+      border: 1px solid var(--border); border-radius: 10px; max-height: 220px;
+      overflow-y: auto; z-index: 20; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.08);
+    }
+    .dropdown.show { display: block; }
+    .dropdown-item { padding: 9px 12px; cursor: pointer; font-size: .9rem; border-bottom: 1px solid #f3f4f6; }
+    .dropdown-item:last-child { border-bottom: none; }
+    .dropdown-item:hover { background: var(--accent-light); }
+    .dropdown-item .code { font-size: .7rem; color: var(--muted); margin-left: 5px; }
+    .btn-row { margin-bottom: 16px; }
+    button#go {
+      width: 100%; padding: 11px; font-size: 0.95rem; font-weight: 600;
+      background: var(--accent); color: #fff; border: none; border-radius: 10px; cursor: pointer;
+    }
+    button#go:hover { background: #0d9488; }
+    button#go:disabled { background: #99f6e4; cursor: not-allowed; }
+    .status { font-size: .85rem; color: var(--muted); margin-bottom: 12px; min-height: 1.2em; }
+    .results { display: flex; flex-direction: column; gap: 10px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
+    .line-name { font-weight: 600; font-size: .95rem; }
+    .direction { font-size: .8rem; color: var(--muted); text-align: right; }
+    .times { display: flex; gap: 20px; }
+    .time-block { flex: 1; }
+    .time-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    .time-value { font-size: 1.25rem; font-weight: 700; color: var(--accent); }
+    .error { color: #b91c1c; font-size: .85rem; }
+    .footer { margin-top: 20px; font-size: .7rem; color: var(--muted); text-align: center; }
+    .loading {
+      display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .tag { display: inline-block; font-size: .65rem; padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+    .tag.depart { background: #ccfbf1; color: #0f766e; }
+    .tag.arrive { background: #e0e7ff; color: #3730a3; }
+    body.embed .chrome { display: none !important; }
+    body.embed .status { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="chrome">
+      <h1>MTR First & Last Train</h1>
+      <p class="subtitle">Pick station(s) · departing & arriving services</p>
+      <div class="search-row">
+        <div class="search-box">
+          <label>Station (sta)</label>
+          <input type="text" id="searchSta" placeholder="e.g. Lo Wu / LOW" autocomplete="off" />
+          <div class="dropdown" id="dropdownSta"></div>
+        </div>
+        <div class="search-box">
+          <label>Target (tar) · optional</label>
+          <input type="text" id="searchTar" placeholder="e.g. Admiralty / ADM" autocomplete="off" />
+          <div class="dropdown" id="dropdownTar"></div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="go" disabled>Show First & Last</button>
+      </div>
+    </div>
+    <div class="status" id="status">Ready · select a station</div>
+    <div class="results" id="results"></div>
+    <div class="footer chrome">Data from MTR Journey Planner · Unofficial · Platform departure times</div>
+  </div>
+  <script>
+    const DATA = {"stations":{"56":{"c":"AWE","e":"AsiaWorld-Expo","z":"博覽館"},"47":{"c":"AIR","e":"Airport","z":"機場"},"46":{"c":"TSY","e":"Tsing Yi","z":"青衣"},"45":{"c":"KOW","e":"Kowloon","z":"九龍"},"44":{"c":"HOK","e":"Hong Kong","z":"香港"},"54":{"c":"SUN","e":"Sunny Bay","z":"欣澳"},"55":{"c":"DIS","e":"Disneyland Resort","z":"迪士尼"},"76":{"c":"LOW","e":"Lo Wu","z":"羅湖"},"75":{"c":"SHS","e":"Sheung Shui","z":"上水"},"74":{"c":"FAN","e":"Fanling","z":"粉嶺"},"73":{"c":"TWO","e":"Tai Wo","z":"太和"},"72":{"c":"TAP","e":"Tai Po Market","z":"大埔墟"},"71":{"c":"UNI","e":"University","z":"大學"},"69":{"c":"FOT","e":"Fo Tan","z":"火炭"},"68":{"c":"SHT","e":"Sha Tin","z":"沙田"},"67":{"c":"TAW","e":"Tai Wai","z":"大圍"},"8":{"c":"KOT","e":"Kowloon Tong","z":"九龍塘"},"65":{"c":"MKK","e":"Mong Kok East","z":"旺角東"},"64":{"c":"HUH","e":"Hung Hom","z":"紅磡"},"94":{"c":"EXC","e":"Exhibition Centre","z":"會展"},"2":{"c":"ADM","e":"Admiralty","z":"金鐘"},"78":{"c":"LMC","e":"Lok Ma Chau","z":"落馬洲"},"37":{"c":"CHW","e":"Chai Wan","z":"柴灣"},"36":{"c":"HFC","e":"Heng Fa Chuen","z":"杏花邨"},"35":{"c":"SKW","e":"Shau Kei Wan","z":"筲箕灣"},"34":{"c":"SWH","e":"Sai Wan Ho","z":"西灣河"},"33":{"c":"TAK","e":"Tai Koo","z":"太古"},"32":{"c":"QUB","e":"Quarry Bay","z":"鰂魚涌"},"31":{"c":"NOP","e":"North Point","z":"北角"},"30":{"c":"FOH","e":"Fortress Hill","z":"炮台山"},"29":{"c":"TIH","e":"Tin Hau","z":"天后"},"28":{"c":"CAB","e":"Causeway Bay","z":"銅鑼灣"},"27":{"c":"WAC","e":"Wan Chai","z":"灣仔"},"1":{"c":"CEN","e":"Central","z":"中環"},"26":{"c":"SHW","e":"Sheung Wan","z":"上環"},"81":{"c":"SYP","e":"Sai Ying Pun","z":"西營盤"},"82":{"c":"HKU","e":"HKU","z":"香港大學"},"83":{"c":"KET","e":"Kennedy Town","z":"堅尼地城"},"49":{"c":"TIK","e":"Tiu Keng Leng","z":"調景嶺"},"48":{"c":"YAT","e":"Yau Tong","z":"油塘"},"38":{"c":"LAT","e":"Lam Tin","z":"藍田"},"15":{"c":"KWT","e":"Kwun Tong","z":"觀塘"},"14":{"c":"NTK","e":"Ngau Tau Kok","z":"牛頭角"},"13":{"c":"KOB","e":"Kowloon Bay","z":"九龍灣"},"12":{"c":"CHH","e":"Choi Hung","z":"彩虹"},"11":{"c":"DIH","e":"Diamond Hill","z":"鑽石山"},"10":{"c":"WTS","e":"Wong Tai Sin","z":"黃大仙"},"9":{"c":"LOF","e":"Lok Fu","z":"樂富"},"7":{"c":"SKM","e":"Shek Kip Mei","z":"石硤尾"},"16":{"c":"PRE","e":"Prince Edward","z":"太子"},"6":{"c":"MOK","e":"Mong Kok","z":"旺角"},"5":{"c":"YMT","e":"Yau Ma Tei","z":"油麻地"},"84":{"c":"HOM","e":"Ho Man Tin","z":"何文田"},"85":{"c":"WHA","e":"Whampoa","z":"黃埔"},"103":{"c":"WKS","e":"Wu Kai Sha","z":"烏溪沙"},"102":{"c":"MOS","e":"Ma On Shan","z":"馬鞍山"},"101":{"c":"HEO","e":"Heng On","z":"恆安"},"100":{"c":"TSH","e":"Tai Shui Hang","z":"大水坑"},"99":{"c":"SHM","e":"Shek Mun","z":"石門"},"98":{"c":"CIO","e":"City One","z":"第一城"},"97":{"c":"STW","e":"Sha Tin Wai","z":"沙田圍"},"96":{"c":"CKT","e":"Che Kung Temple","z":"車公廟"},"90":{"c":"HIK","e":"Hin Keng","z":"顯徑"},"91":{"c":"KAT","e":"Kai Tak","z":"啟德"},"92":{"c":"SUW","e":"Sung Wong Toi","z":"宋皇臺"},"93":{"c":"TKW","e":"To Kwa Wan","z":"土瓜灣"},"80":{"c":"ETS","e":"East Tsim Sha Tsui","z":"尖東"},"111":{"c":"AUS","e":"Austin","z":"柯士甸"},"53":{"c":"NAC","e":"Nam Cheong","z":"南昌"},"20":{"c":"MEF","e":"Mei Foo","z":"美孚"},"114":{"c":"TWW","e":"Tsuen Wan West","z":"荃灣西"},"115":{"c":"KSR","e":"Kam Sheung Road","z":"錦上路"},"116":{"c":"YUL","e":"Yuen Long","z":"元朗"},"117":{"c":"LOP","e":"Long Ping","z":"朗屏"},"118":{"c":"TIS","e":"Tin Shui Wai","z":"天水圍"},"119":{"c":"SIH","e":"Siu Hong","z":"兆康"},"120":{"c":"TUM","e":"Tuen Mun","z":"屯門"},"43":{"c":"TUC","e":"Tung Chung","z":"東涌"},"42":{"c":"TSY","e":"Tsing Yi","z":"青衣"},"21":{"c":"LAK","e":"Lai King","z":"茘景"},"41":{"c":"OLY","e":"Olympic","z":"奧運"},"40":{"c":"KOW","e":"Kowloon","z":"九龍"},"39":{"c":"HOK","e":"Hong Kong","z":"香港"},"52":{"c":"POA","e":"Po Lam","z":"寶琳"},"51":{"c":"HAH","e":"Hang Hau","z":"坑口"},"50":{"c":"TKO","e":"Tseung Kwan O","z":"將軍澳"},"57":{"c":"LHP","e":"LOHAS Park","z":"康城"},"25":{"c":"TSW","e":"Tsuen Wan","z":"荃灣"},"24":{"c":"TWH","e":"Tai Wo Hau","z":"大窩口"},"23":{"c":"KWH","e":"Kwai Hing","z":"葵興"},"22":{"c":"KWF","e":"Kwai Fong","z":"葵芳"},"19":{"c":"LCK","e":"Lai Chi Kok","z":"茘枝角"},"18":{"c":"CSW","e":"Cheung Sha Wan","z":"長沙灣"},"17":{"c":"SSP","e":"Sham Shui Po","z":"深水埗"},"4":{"c":"JOR","e":"Jordan","z":"佐敦"},"3":{"c":"TST","e":"Tsim Sha Tsui","z":"尖沙咀"},"86":{"c":"OCP","e":"Ocean Park","z":"海洋公園"},"87":{"c":"WCH","e":"Wong Chuk Hang","z":"黃竹坑"},"88":{"c":"LET","e":"Lei Tung","z":"利東"},"89":{"c":"SOH","e":"South Horizons","z":"海怡半島"}},"lineDirs":{"AEL|DT":[{"i":"56","e":"AsiaWorld-Expo"},{"i":"47","e":"Airport"},{"i":"46","e":"Tsing Yi"},{"i":"45","e":"Kowloon"},{"i":"44","e":"Hong Kong"}],"AEL|UT":[{"i":"44","e":"Hong Kong"},{"i":"45","e":"Kowloon"},{"i":"46","e":"Tsing Yi"},{"i":"47","e":"Airport"},{"i":"56","e":"AsiaWorld-Expo"}],"DRL|DT":[{"i":"54","e":"Sunny Bay"},{"i":"55","e":"Disneyland Resort"}],"DRL|UT":[{"i":"55","e":"Disneyland Resort"},{"i":"54","e":"Sunny Bay"}],"EAL|DT":[{"i":"76","e":"Lo Wu"},{"i":"75","e":"Sheung Shui"},{"i":"74","e":"Fanling"},{"i":"73","e":"Tai Wo"},{"i":"72","e":"Tai Po Market"},{"i":"71","e":"University"},{"i":"69","e":"Fo Tan"},{"i":"68","e":"Sha Tin"},{"i":"67","e":"Tai Wai"},{"i":"8","e":"Kowloon Tong"},{"i":"65","e":"Mong Kok East"},{"i":"64","e":"Hung Hom"},{"i":"94","e":"Exhibition Centre"},{"i":"2","e":"Admiralty"}],"EAL|LMC-DT":[{"i":"78","e":"Lok Ma Chau"},{"i":"75","e":"Sheung Shui"},{"i":"74","e":"Fanling"},{"i":"73","e":"Tai Wo"},{"i":"72","e":"Tai Po Market"},{"i":"71","e":"University"},{"i":"69","e":"Fo Tan"},{"i":"68","e":"Sha Tin"},{"i":"67","e":"Tai Wai"},{"i":"8","e":"Kowloon Tong"},{"i":"65","e":"Mong Kok East"},{"i":"64","e":"Hung Hom"},{"i":"94","e":"Exhibition Centre"},{"i":"2","e":"Admiralty"}],"EAL|LMC-UT":[{"i":"2","e":"Admiralty"},{"i":"94","e":"Exhibition Centre"},{"i":"64","e":"Hung Hom"},{"i":"65","e":"Mong Kok East"},{"i":"8","e":"Kowloon Tong"},{"i":"67","e":"Tai Wai"},{"i":"68","e":"Sha Tin"},{"i":"69","e":"Fo Tan"},{"i":"71","e":"University"},{"i":"72","e":"Tai Po Market"},{"i":"73","e":"Tai Wo"},{"i":"74","e":"Fanling"},{"i":"75","e":"Sheung Shui"},{"i":"78","e":"Lok Ma Chau"}],"EAL|UT":[{"i":"2","e":"Admiralty"},{"i":"94","e":"Exhibition Centre"},{"i":"64","e":"Hung Hom"},{"i":"65","e":"Mong Kok East"},{"i":"8","e":"Kowloon Tong"},{"i":"67","e":"Tai Wai"},{"i":"68","e":"Sha Tin"},{"i":"69","e":"Fo Tan"},{"i":"71","e":"University"},{"i":"72","e":"Tai Po Market"},{"i":"73","e":"Tai Wo"},{"i":"74","e":"Fanling"},{"i":"75","e":"Sheung Shui"},{"i":"76","e":"Lo Wu"}],"ISL|DT":[{"i":"37","e":"Chai Wan"},{"i":"36","e":"Heng Fa Chuen"},{"i":"35","e":"Shau Kei Wan"},{"i":"34","e":"Sai Wan Ho"},{"i":"33","e":"Tai Koo"},{"i":"32","e":"Quarry Bay"},{"i":"31","e":"North Point"},{"i":"30","e":"Fortress Hill"},{"i":"29","e":"Tin Hau"},{"i":"28","e":"Causeway Bay"},{"i":"27","e":"Wan Chai"},{"i":"2","e":"Admiralty"},{"i":"1","e":"Central"},{"i":"26","e":"Sheung Wan"},{"i":"81","e":"Sai Ying Pun"},{"i":"82","e":"HKU"},{"i":"83","e":"Kennedy Town"}],"ISL|UT":[{"i":"83","e":"Kennedy Town"},{"i":"82","e":"HKU"},{"i":"81","e":"Sai Ying Pun"},{"i":"26","e":"Sheung Wan"},{"i":"1","e":"Central"},{"i":"2","e":"Admiralty"},{"i":"27","e":"Wan Chai"},{"i":"28","e":"Causeway Bay"},{"i":"29","e":"Tin Hau"},{"i":"30","e":"Fortress Hill"},{"i":"31","e":"North Point"},{"i":"32","e":"Quarry Bay"},{"i":"33","e":"Tai Koo"},{"i":"34","e":"Sai Wan Ho"},{"i":"35","e":"Shau Kei Wan"},{"i":"36","e":"Heng Fa Chuen"},{"i":"37","e":"Chai Wan"}],"KTL|DT":[{"i":"49","e":"Tiu Keng Leng"},{"i":"48","e":"Yau Tong"},{"i":"38","e":"Lam Tin"},{"i":"15","e":"Kwun Tong"},{"i":"14","e":"Ngau Tau Kok"},{"i":"13","e":"Kowloon Bay"},{"i":"12","e":"Choi Hung"},{"i":"11","e":"Diamond Hill"},{"i":"10","e":"Wong Tai Sin"},{"i":"9","e":"Lok Fu"},{"i":"8","e":"Kowloon Tong"},{"i":"7","e":"Shek Kip Mei"},{"i":"16","e":"Prince Edward"},{"i":"6","e":"Mong Kok"},{"i":"5","e":"Yau Ma Tei"},{"i":"84","e":"Ho Man Tin"},{"i":"85","e":"Whampoa"}],"KTL|UT":[{"i":"85","e":"Whampoa"},{"i":"84","e":"Ho Man Tin"},{"i":"5","e":"Yau Ma Tei"},{"i":"6","e":"Mong Kok"},{"i":"16","e":"Prince Edward"},{"i":"7","e":"Shek Kip Mei"},{"i":"8","e":"Kowloon Tong"},{"i":"9","e":"Lok Fu"},{"i":"10","e":"Wong Tai Sin"},{"i":"11","e":"Diamond Hill"},{"i":"12","e":"Choi Hung"},{"i":"13","e":"Kowloon Bay"},{"i":"14","e":"Ngau Tau Kok"},{"i":"15","e":"Kwun Tong"},{"i":"38","e":"Lam Tin"},{"i":"48","e":"Yau Tong"},{"i":"49","e":"Tiu Keng Leng"}],"TML|UT":[{"i":"103","e":"Wu Kai Sha"},{"i":"102","e":"Ma On Shan"},{"i":"101","e":"Heng On"},{"i":"100","e":"Tai Shui Hang"},{"i":"99","e":"Shek Mun"},{"i":"98","e":"City One"},{"i":"97","e":"Sha Tin Wai"},{"i":"96","e":"Che Kung Temple"},{"i":"67","e":"Tai Wai"},{"i":"90","e":"Hin Keng"},{"i":"11","e":"Diamond Hill"},{"i":"91","e":"Kai Tak"},{"i":"92","e":"Sung Wong Toi"},{"i":"93","e":"To Kwa Wan"},{"i":"84","e":"Ho Man Tin"},{"i":"64","e":"Hung Hom"},{"i":"80","e":"East Tsim Sha Tsui"},{"i":"111","e":"Austin"},{"i":"53","e":"Nam Cheong"},{"i":"20","e":"Mei Foo"},{"i":"114","e":"Tsuen Wan West"},{"i":"115","e":"Kam Sheung Road"},{"i":"116","e":"Yuen Long"},{"i":"117","e":"Long Ping"},{"i":"118","e":"Tin Shui Wai"},{"i":"119","e":"Siu Hong"},{"i":"120","e":"Tuen Mun"}],"TML|DT":[{"i":"120","e":"Tuen Mun"},{"i":"119","e":"Siu Hong"},{"i":"118","e":"Tin Shui Wai"},{"i":"117","e":"Long Ping"},{"i":"116","e":"Yuen Long"},{"i":"115","e":"Kam Sheung Road"},{"i":"114","e":"Tsuen Wan West"},{"i":"20","e":"Mei Foo"},{"i":"53","e":"Nam Cheong"},{"i":"111","e":"Austin"},{"i":"80","e":"East Tsim Sha Tsui"},{"i":"64","e":"Hung Hom"},{"i":"84","e":"Ho Man Tin"},{"i":"93","e":"To Kwa Wan"},{"i":"92","e":"Sung Wong Toi"},{"i":"91","e":"Kai Tak"},{"i":"11","e":"Diamond Hill"},{"i":"90","e":"Hin Keng"},{"i":"67","e":"Tai Wai"},{"i":"96","e":"Che Kung Temple"},{"i":"97","e":"Sha Tin Wai"},{"i":"98","e":"City One"},{"i":"99","e":"Shek Mun"},{"i":"100","e":"Tai Shui Hang"},{"i":"101","e":"Heng On"},{"i":"102","e":"Ma On Shan"},{"i":"103","e":"Wu Kai Sha"}],"TCL|DT":[{"i":"43","e":"Tung Chung"},{"i":"54","e":"Sunny Bay"},{"i":"42","e":"Tsing Yi"},{"i":"21","e":"Lai King"},{"i":"53","e":"Nam Cheong"},{"i":"41","e":"Olympic"},{"i":"40","e":"Kowloon"},{"i":"39","e":"Hong Kong"}],"TCL|UT":[{"i":"39","e":"Hong Kong"},{"i":"40","e":"Kowloon"},{"i":"41","e":"Olympic"},{"i":"53","e":"Nam Cheong"},{"i":"21","e":"Lai King"},{"i":"42","e":"Tsing Yi"},{"i":"54","e":"Sunny Bay"},{"i":"43","e":"Tung Chung"}],"TKL|DT":[{"i":"52","e":"Po Lam"},{"i":"51","e":"Hang Hau"},{"i":"50","e":"Tseung Kwan O"},{"i":"49","e":"Tiu Keng Leng"},{"i":"48","e":"Yau Tong"},{"i":"32","e":"Quarry Bay"},{"i":"31","e":"North Point"}],"TKL|TKS-DT":[{"i":"57","e":"LOHAS Park"},{"i":"50","e":"Tseung Kwan O"},{"i":"49","e":"Tiu Keng Leng"}],"TKL|TKS-UT":[{"i":"49","e":"Tiu Keng Leng"},{"i":"50","e":"Tseung Kwan O"},{"i":"57","e":"LOHAS Park"}],"TKL|UT":[{"i":"31","e":"North Point"},{"i":"32","e":"Quarry Bay"},{"i":"48","e":"Yau Tong"},{"i":"49","e":"Tiu Keng Leng"},{"i":"50","e":"Tseung Kwan O"},{"i":"51","e":"Hang Hau"},{"i":"52","e":"Po Lam"}],"TWL|DT":[{"i":"25","e":"Tsuen Wan"},{"i":"24","e":"Tai Wo Hau"},{"i":"23","e":"Kwai Hing"},{"i":"22","e":"Kwai Fong"},{"i":"21","e":"Lai King"},{"i":"20","e":"Mei Foo"},{"i":"19","e":"Lai Chi Kok"},{"i":"18","e":"Cheung Sha Wan"},{"i":"17","e":"Sham Shui Po"},{"i":"16","e":"Prince Edward"},{"i":"6","e":"Mong Kok"},{"i":"5","e":"Yau Ma Tei"},{"i":"4","e":"Jordan"},{"i":"3","e":"Tsim Sha Tsui"},{"i":"2","e":"Admiralty"},{"i":"1","e":"Central"}],"TWL|UT":[{"i":"1","e":"Central"},{"i":"2","e":"Admiralty"},{"i":"3","e":"Tsim Sha Tsui"},{"i":"4","e":"Jordan"},{"i":"5","e":"Yau Ma Tei"},{"i":"6","e":"Mong Kok"},{"i":"16","e":"Prince Edward"},{"i":"17","e":"Sham Shui Po"},{"i":"18","e":"Cheung Sha Wan"},{"i":"19","e":"Lai Chi Kok"},{"i":"20","e":"Mei Foo"},{"i":"21","e":"Lai King"},{"i":"22","e":"Kwai Fong"},{"i":"23","e":"Kwai Hing"},{"i":"24","e":"Tai Wo Hau"},{"i":"25","e":"Tsuen Wan"}],"SIL|UT":[{"i":"2","e":"Admiralty"},{"i":"86","e":"Ocean Park"},{"i":"87","e":"Wong Chuk Hang"},{"i":"88","e":"Lei Tung"},{"i":"89","e":"South Horizons"}],"SIL|DT":[{"i":"89","e":"South Horizons"},{"i":"88","e":"Lei Tung"},{"i":"87","e":"Wong Chuk Hang"},{"i":"86","e":"Ocean Park"},{"i":"2","e":"Admiralty"}]},"stationToLines":{"56":["AEL|DT","AEL|UT"],"47":["AEL|DT","AEL|UT"],"46":["AEL|DT","AEL|UT"],"45":["AEL|DT","AEL|UT"],"44":["AEL|DT","AEL|UT"],"54":["DRL|DT","DRL|UT","TCL|DT","TCL|UT"],"55":["DRL|DT","DRL|UT"],"76":["EAL|DT","EAL|UT"],"75":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"74":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"73":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"72":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"71":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"69":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"68":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"67":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT","TML|UT","TML|DT"],"8":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT","KTL|DT","KTL|UT"],"65":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"64":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT","TML|UT","TML|DT"],"94":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT"],"2":["EAL|DT","EAL|LMC-DT","EAL|LMC-UT","EAL|UT","ISL|DT","ISL|UT","TWL|DT","TWL|UT","SIL|UT","SIL|DT"],"78":["EAL|LMC-DT","EAL|LMC-UT"],"37":["ISL|DT","ISL|UT"],"36":["ISL|DT","ISL|UT"],"35":["ISL|DT","ISL|UT"],"34":["ISL|DT","ISL|UT"],"33":["ISL|DT","ISL|UT"],"32":["ISL|DT","ISL|UT","TKL|DT","TKL|UT"],"31":["ISL|DT","ISL|UT","TKL|DT","TKL|UT"],"30":["ISL|DT","ISL|UT"],"29":["ISL|DT","ISL|UT"],"28":["ISL|DT","ISL|UT"],"27":["ISL|DT","ISL|UT"],"1":["ISL|DT","ISL|UT","TWL|DT","TWL|UT"],"26":["ISL|DT","ISL|UT"],"81":["ISL|DT","ISL|UT"],"82":["ISL|DT","ISL|UT"],"83":["ISL|DT","ISL|UT"],"49":["KTL|DT","KTL|UT","TKL|DT","TKL|TKS-DT","TKL|TKS-UT","TKL|UT"],"48":["KTL|DT","KTL|UT","TKL|DT","TKL|UT"],"38":["KTL|DT","KTL|UT"],"15":["KTL|DT","KTL|UT"],"14":["KTL|DT","KTL|UT"],"13":["KTL|DT","KTL|UT"],"12":["KTL|DT","KTL|UT"],"11":["KTL|DT","KTL|UT","TML|UT","TML|DT"],"10":["KTL|DT","KTL|UT"],"9":["KTL|DT","KTL|UT"],"7":["KTL|DT","KTL|UT"],"16":["KTL|DT","KTL|UT","TWL|DT","TWL|UT"],"6":["KTL|DT","KTL|UT","TWL|DT","TWL|UT"],"5":["KTL|DT","KTL|UT","TWL|DT","TWL|UT"],"84":["KTL|DT","KTL|UT","TML|UT","TML|DT"],"85":["KTL|DT","KTL|UT"],"103":["TML|UT","TML|DT"],"102":["TML|UT","TML|DT"],"101":["TML|UT","TML|DT"],"100":["TML|UT","TML|DT"],"99":["TML|UT","TML|DT"],"98":["TML|UT","TML|DT"],"97":["TML|UT","TML|DT"],"96":["TML|UT","TML|DT"],"90":["TML|UT","TML|DT"],"91":["TML|UT","TML|DT"],"92":["TML|UT","TML|DT"],"93":["TML|UT","TML|DT"],"80":["TML|UT","TML|DT"],"111":["TML|UT","TML|DT"],"53":["TML|UT","TML|DT","TCL|DT","TCL|UT"],"20":["TML|UT","TML|DT","TWL|DT","TWL|UT"],"114":["TML|UT","TML|DT"],"115":["TML|UT","TML|DT"],"116":["TML|UT","TML|DT"],"117":["TML|UT","TML|DT"],"118":["TML|UT","TML|DT"],"119":["TML|UT","TML|DT"],"120":["TML|UT","TML|DT"],"43":["TCL|DT","TCL|UT"],"42":["TCL|DT","TCL|UT"],"21":["TCL|DT","TCL|UT","TWL|DT","TWL|UT"],"41":["TCL|DT","TCL|UT"],"40":["TCL|DT","TCL|UT"],"39":["TCL|DT","TCL|UT"],"52":["TKL|DT","TKL|UT"],"51":["TKL|DT","TKL|UT"],"50":["TKL|DT","TKL|TKS-DT","TKL|TKS-UT","TKL|UT"],"57":["TKL|TKS-DT","TKL|TKS-UT"],"25":["TWL|DT","TWL|UT"],"24":["TWL|DT","TWL|UT"],"23":["TWL|DT","TWL|UT"],"22":["TWL|DT","TWL|UT"],"19":["TWL|DT","TWL|UT"],"18":["TWL|DT","TWL|UT"],"17":["TWL|DT","TWL|UT"],"4":["TWL|DT","TWL|UT"],"3":["TWL|DT","TWL|UT"],"86":["SIL|UT","SIL|DT"],"87":["SIL|UT","SIL|DT"],"88":["SIL|UT","SIL|DT"],"89":["SIL|UT","SIL|DT"]}};
+    const LINE_NAMES = {AEL:"Airport Express",DRL:"Disneyland Resort Line",EAL:"East Rail Line",ISL:"Island Line",KTL:"Kwun Tong Line",SIL:"South Island Line",TCL:"Tung Chung Line",TKL:"Tseung Kwan O Line",TML:"Tuen Ma Line",TWL:"Tsuen Wan Line"};
+    const stations = DATA.stations, lineDirs = DATA.lineDirs, stationToLines = DATA.stationToLines;
+    const searchSta = document.getElementById("searchSta");
+    const searchTar = document.getElementById("searchTar");
+    const dropdownSta = document.getElementById("dropdownSta");
+    const dropdownTar = document.getElementById("dropdownTar");
+    const goBtn = document.getElementById("go");
+    const statusEl = document.getElementById("status");
+    const resultsEl = document.getElementById("results");
+    let selectedStaId = null, selectedTarId = null;
+
+    function findStation(codeOrId) {
+      if (!codeOrId) return null;
+      const q = String(codeOrId).toLowerCase();
+      return Object.entries(stations).find(([id,s]) => s.c.toLowerCase() === q || id === String(codeOrId)) || null;
+    }
+    function updateGoButton() { goBtn.disabled = !selectedStaId; }
+
+    function renderDropdown(input, dropdown, query, onSelect) {
+      const q = query.trim().toLowerCase();
+      if (!q) { dropdown.classList.remove("show"); return; }
+      const matches = Object.entries(stations).filter(([id,s]) =>
+        s.e.toLowerCase().includes(q) || s.z.includes(q) || s.c.toLowerCase().includes(q)
+      ).slice(0, 10);
+      dropdown.innerHTML = matches.length === 0
+        ? `<div class="dropdown-item">No matches</div>`
+        : matches.map(([id,s]) => `<div class="dropdown-item" data-id="${id}">${s.e} <span class="code">${s.z} · ${s.c}</span></div>`).join("");
+      dropdown.classList.add("show");
+      dropdown.onclick = (e) => {
+        const item = e.target.closest(".dropdown-item");
+        if (!item || !item.dataset.id) return;
+        const id = item.dataset.id, s = stations[id];
+        input.value = `${s.e} (${s.c})`;
+        dropdown.classList.remove("show");
+        onSelect(id);
+        updateGoButton();
+      };
+    }
+
+    searchSta.addEventListener("input", () => {
+      selectedStaId = null; updateGoButton();
+      renderDropdown(searchSta, dropdownSta, searchSta.value, id => { selectedStaId = id; });
+    });
+    searchSta.addEventListener("focus", () => {
+      if (searchSta.value.trim()) renderDropdown(searchSta, dropdownSta, searchSta.value, id => { selectedStaId = id; });
+    });
+    searchTar.addEventListener("input", () => {
+      selectedTarId = null;
+      renderDropdown(searchTar, dropdownTar, searchTar.value, id => { selectedTarId = id; });
+    });
+    searchTar.addEventListener("focus", () => {
+      if (searchTar.value.trim()) renderDropdown(searchTar, dropdownTar, searchTar.value, id => { selectedTarId = id; });
+    });
+    document.addEventListener("click", e => {
+      if (!e.target.closest("#searchSta") && !e.target.closest("#dropdownSta")) dropdownSta.classList.remove("show");
+      if (!e.target.closest("#searchTar") && !e.target.closest("#dropdownTar")) dropdownTar.classList.remove("show");
+    });
+
+    goBtn.addEventListener("click", () => {
+      if (!selectedStaId) return;
+      const url = new URL(location);
+      url.searchParams.set("sta", stations[selectedStaId].c);
+      if (selectedTarId) url.searchParams.set("tar", stations[selectedTarId].c);
+      else url.searchParams.delete("tar");
+      history.replaceState(null, "", url);
+      loadFirstLast(selectedStaId, selectedTarId);
+    });
+
+    async function fetchRoute(o, d) {
+      const res = await fetch(`https://www.mtr.com.hk/share/customer/jp/api/HRRoutes/?o=${o}&d=${d}&lang=E`);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }
+
+    async function loadFirstLast(stationId, targetId) {
+      resultsEl.innerHTML = "";
+      statusEl.innerHTML = `<span class="loading"></span> Fetching first & last trains…`;
+      let queries = [];
+      if (targetId) {
+        const tName = stations[targetId]?.e || targetId;
+        queries = [
+          { line: "", o: stationId, d: targetId, label: `to ${tName}`, kind: "depart" },
+          { line: "", o: targetId, d: stationId, label: `from ${tName}`, kind: "arrive" }
+        ];
+      } else {
+        const lineKeys = stationToLines[stationId] || [];
+        if (!lineKeys.length) { statusEl.innerHTML = `<span class="error">No line data found.</span>`; return; }
+        const seen = new Set(), linesSeen = new Set();
+        for (const key of lineKeys) {
+          const line = key.split("|")[0];
+          if (linesSeen.has(line)) continue;
+          linesSeen.add(line);
+          const termini = new Map();
+          for (const k of Object.keys(lineDirs)) {
+            if (!k.startsWith(line + "|")) continue;
+            const stops = lineDirs[k];
+            if (!stops?.length) continue;
+            termini.set(stops[0].i, stops[0].e);
+            termini.set(stops[stops.length - 1].i, stops[stops.length - 1].e);
+          }
+          termini.delete(stationId);
+          for (const [tid, tname] of termini) {
+            const depKey = `dep|${line}|${tid}`;
+            if (!seen.has(depKey)) {
+              seen.add(depKey);
+              queries.push({ line, o: stationId, d: tid, label: `to ${tname}`, kind: "depart" });
+            }
+            const arrKey = `arr|${line}|${tid}`;
+            if (!seen.has(arrKey)) {
+              seen.add(arrKey);
+              queries.push({ line, o: tid, d: stationId, label: `from ${tname}`, kind: "arrive" });
+            }
+          }
+        }
+      }
+      if (!queries.length) { statusEl.textContent = "No directions found."; return; }
+
+      const results = []; let idx = 0; const concurrency = 4;
+      async function worker() {
+        while (idx < queries.length) {
+          const i = idx++, q = queries[i];
+          try {
+            const data = await fetchRoute(q.o, q.d);
+            let line = q.line;
+            if (!line && data.firstTrain?.links?.length) line = data.firstTrain.links[0];
+            results.push({ ...q, line: line || "", first: data.firstTrain?.time || "—", last: data.lastTrain?.time || "—", ok: true });
+          } catch {
+            results.push({ ...q, first: "—", last: "—", ok: false });
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+      results.sort((a, b) => {
+        const na = LINE_NAMES[a.line] || a.line || "", nb = LINE_NAMES[b.line] || b.line || "";
+        if (na !== nb) return na.localeCompare(nb);
+        if (a.kind !== b.kind) return a.kind === "depart" ? -1 : 1;
+        return a.label.localeCompare(b.label);
+      });
+
+      const stationName = stations[stationId]?.e || stationId;
+      const targetName = targetId ? (stations[targetId]?.e || targetId) : null;
+      statusEl.textContent = targetName ? `${stationName} ↔ ${targetName}` : `${results.length} service(s) for ${stationName}`;
+      resultsEl.innerHTML = results.map(r => `
+        <div class="card">
+          <div class="card-header">
+            <span class="line-name">${LINE_NAMES[r.line] || r.line || "MTR"}<span class="tag ${r.kind}">${r.kind === "depart" ? "Depart" : "Arrive"}</span></span>
+            <span class="direction">${r.label}</span>
+          </div>
+          <div class="times">
+            <div class="time-block"><div class="time-label">First</div><div class="time-value">${r.first}</div></div>
+            <div class="time-block"><div class="time-label">Last</div><div class="time-value">${r.last}</div></div>
+          </div>
+          ${r.ok ? "" : `<div class="error" style="margin-top:6px">Failed to load</div>`}
+        </div>`).join("");
+    }
+
+    (function init() {
+      const params = new URLSearchParams(location.search);
+      const staParam = params.get("sta") || params.get("station");
+      const tarParam = params.get("tar") || params.get("target");
+      if (staParam) {
+        document.body.classList.add("embed");
+        const foundSta = findStation(staParam);
+        if (!foundSta) { statusEl.innerHTML = `<span class="error">Station not found: ${staParam}</span>`; return; }
+        const [staId] = foundSta;
+        let tarId = null;
+        if (tarParam) {
+          const foundTar = findStation(tarParam);
+          if (!foundTar) { statusEl.innerHTML = `<span class="error">Target station not found: ${tarParam}</span>`; return; }
+          tarId = foundTar[0];
+        }
+        loadFirstLast(staId, tarId);
+      }
+    })();
+  </script>
+</body>
+</html>
